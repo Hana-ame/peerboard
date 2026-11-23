@@ -1,0 +1,2035 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>棋侠对战 · PeerJS 联机棋类大厅</title>
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      margin: 0;
+    }
+    .board-container {
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    canvas {
+      display: block;
+      touch-action: manipulation;
+    }
+    .scrollbar-thin::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .scrollbar-thin::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.4);
+    }
+    .scrollbar-thin::-webkit-scrollbar-thumb {
+      background: rgba(148, 163, 184, 0.35);
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-950 text-slate-100">
+
+  <!-- Top Header -->
+  <header class="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-7xl mx-auto px-3 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20 text-lg font-bold text-slate-950">
+          棋
+        </div>
+        <div>
+          <h1 class="text-base sm:text-lg font-bold tracking-tight text-white leading-tight">棋侠对战 · PeerBoard</h1>
+          <p class="text-[11px] text-slate-400 leading-tight">PeerJS 点对点联机 · 7款经典棋类</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2">
+        <span id="connBadge" class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-slate-800 text-slate-300 border border-slate-700">
+          <span id="connDot" class="w-2 h-2 rounded-full bg-slate-400"></span>
+          <span id="connText">离线模式</span>
+        </span>
+        <button id="soundToggleBtn" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 transition" title="切换音效">
+          🔊 音效开
+        </button>
+      </div>
+    </div>
+
+    <!-- Game Selector Strip -->
+    <div class="max-w-7xl mx-auto px-3 sm:px-5 pb-2.5">
+      <div id="gameTabs" class="flex items-center gap-1.5 overflow-x-auto scrollbar-thin pb-1">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+
+    <!-- Left Panel: Room & Connection -->
+    <section class="lg:col-span-3 space-y-3 order-2 lg:order-1">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-xl space-y-3">
+        <div class="flex items-center justify-between">
+          <h2 class="text-sm font-semibold text-slate-100">对战模式与房间</h2>
+          <span class="text-[11px] px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 font-mono">前缀: QIXIA-</span>
+        </div>
+
+        <!-- Mode Switcher -->
+        <div class="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <button type="button" data-mode="p2p" class="mode-btn px-2 py-1.5 rounded-lg text-xs font-medium transition bg-amber-500 text-slate-950">联机对战</button>
+          <button type="button" data-mode="ai" class="mode-btn px-2 py-1.5 rounded-lg text-xs font-medium transition text-slate-300 hover:text-white">人机 AI</button>
+          <button type="button" data-mode="local" class="mode-btn px-2 py-1.5 rounded-lg text-xs font-medium transition text-slate-300 hover:text-white">本地双人</button>
+        </div>
+
+        <!-- P2P Controls -->
+        <div id="p2pPanel" class="space-y-3">
+          <div class="grid grid-cols-2 gap-2">
+            <button id="createRoomBtn" type="button" class="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shadow-md shadow-amber-500/10">
+              创建房间
+            </button>
+            <button id="leaveRoomBtn" type="button" class="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs border border-slate-700 transition disabled:opacity-40" disabled>
+              断开连接
+            </button>
+          </div>
+
+          <!-- Active Room Share Box -->
+          <div id="roomShareBox" class="hidden bg-slate-950/90 border border-amber-500/30 rounded-xl p-3 space-y-2">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-slate-400">当前房间号</span>
+              <span id="myRoleBadge" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-medium">房主 · 先手</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <code id="roomCodeDisplay" class="flex-1 px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-amber-300 font-mono text-sm font-bold tracking-wider text-center select-all">QIXIA-000000</code>
+              <button id="copyCodeBtn" type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs text-slate-200 border border-slate-700 transition">复制号</button>
+            </div>
+            <button id="copyShareStrBtn" type="button" class="w-full py-1.5 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 text-xs font-medium transition">
+              📋 复制完整分享口令（含棋种与房间号）
+            </button>
+          </div>
+
+          <!-- Join Room Input -->
+          <div class="space-y-1.5 pt-1 border-t border-slate-800">
+            <label for="joinInput" class="block text-xs text-slate-400">输入房间号或粘贴分享口令</label>
+            <div class="flex gap-1.5">
+              <input id="joinInput" type="text" placeholder="如 QIXIA-A3F9K2 或整段口令" class="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500" />
+              <button id="joinRoomBtn" type="button" class="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition shrink-0">
+                加入
+              </button>
+            </div>
+            <p class="text-[11px] text-slate-500">支持直接粘贴好友发来的整段分享字符，自动识别 <span class="font-mono text-slate-400">QIXIA-</span> 房间号。</p>
+          </div>
+        </div>
+
+        <!-- Go Board Size Option (only shown for Go) -->
+        <div id="goOptionsBox" class="hidden pt-2 border-t border-slate-800 space-y-1.5">
+          <span class="block text-xs text-slate-400">围棋棋盘规格</span>
+          <div class="grid grid-cols-3 gap-1.5">
+            <button type="button" data-gosize="9" class="go-size-btn px-2 py-1 rounded-lg text-xs font-medium bg-amber-500 text-slate-950">9×9</button>
+            <button type="button" data-gosize="13" class="go-size-btn px-2 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700">13×13</button>
+            <button type="button" data-gosize="19" class="go-size-btn px-2 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700">19×19</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Rules Quick Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-xl space-y-1.5">
+        <h3 class="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
+          <span>📖</span>
+          <span id="ruleTitle">规则提示</span>
+        </h3>
+        <p id="ruleDesc" class="text-xs text-slate-400 leading-relaxed"></p>
+      </div>
+    </section>
+
+    <!-- Center Panel: Interactive Board -->
+    <section class="lg:col-span-6 flex flex-col items-center space-y-3 order-1 lg:order-2">
+      <!-- Match Status Bar -->
+      <div class="w-full bg-slate-900 border border-slate-800 rounded-2xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 shadow-lg">
+        <div class="flex items-center gap-2.5">
+          <span id="turnIndicator" class="w-3.5 h-3.5 rounded-full bg-amber-400 ring-4 ring-amber-400/20"></span>
+          <div>
+            <div id="turnText" class="text-sm font-semibold text-white">红方回合</div>
+            <div id="subStatusText" class="text-[11px] text-slate-400">点击棋子开始走棋</div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <button id="passBtn" type="button" class="hidden px-2.5 py-1.5 rounded-lg text-xs font-medium bg-indigo-500/20 hover:bg-indigo-500/30 text-indigo-300 border border-indigo-500/30 transition">
+            停一手 (Pass)
+          </button>
+          <button id="scoreGoBtn" type="button" class="hidden px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition">
+            数子结算
+          </button>
+          <button id="undoBtn" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition">
+            ↩ 悔棋
+          </button>
+          <button id="resignBtn" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/30 transition">
+            🏳 认输
+          </button>
+          <button id="restartBtn" type="button" class="px-2.5 py-1.5 rounded-lg text-xs font-medium bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold transition">
+            🔄 重开
+          </button>
+        </div>
+      </div>
+
+      <!-- Board Canvas Wrapper -->
+      <div id="boardWrapper" class="board-container w-full max-w-[560px] bg-slate-900 border border-slate-800 rounded-2xl p-2 sm:p-3 shadow-2xl flex items-center justify-center relative">
+        <canvas id="gameCanvas" class="rounded-xl cursor-pointer"></canvas>
+      </div>
+
+      <!-- Score / Capture Summary Strip -->
+      <div id="extraScoreBar" class="w-full max-w-[560px] bg-slate-900 border border-slate-800 rounded-xl px-4 py-2 flex items-center justify-between text-xs text-slate-300">
+        <span id="p1ScoreLabel">先手</span>
+        <span id="centerScoreLabel" class="font-mono text-amber-300 font-semibold">对局进行中</span>
+        <span id="p2ScoreLabel">后手</span>
+      </div>
+    </section>
+
+    <!-- Right Panel: Chat & Move Log -->
+    <section class="lg:col-span-3 space-y-3 order-3">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-3.5 shadow-xl flex flex-col h-[420px]">
+        <div class="flex items-center justify-between pb-2 border-b border-slate-800">
+          <h2 class="text-sm font-semibold text-slate-100">对局记录 & 聊天</h2>
+          <span id="moveCountBadge" class="text-[11px] px-2 py-0.5 rounded bg-slate-800 text-slate-400">0 步</span>
+        </div>
+
+        <div id="chatLog" class="flex-1 overflow-y-auto scrollbar-thin py-2.5 space-y-2 text-xs">
+          <div class="text-slate-500 text-center py-4">选择棋种即可开局，或创建/加入 PeerJS 房间与好友对战。</div>
+        </div>
+
+        <form id="chatForm" class="pt-2 border-t border-slate-800 flex gap-1.5">
+          <input id="chatInput" type="text" placeholder="发送消息或表情..." class="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500" />
+          <button type="submit" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition">发送</button>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- In-page Modal (Undo / Game Over / Confirm) -->
+  <div id="modalOverlay" class="hidden fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+      <h3 id="modalTitle" class="text-base font-bold text-white">提示</h3>
+      <p id="modalBody" class="text-xs text-slate-300 leading-relaxed"></p>
+      <div id="modalActions" class="flex justify-end gap-2"></div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div id="toastBox" class="fixed bottom-4 right-4 z-50 space-y-2 pointer-events-none"></div>
+
+  <script>
+  (() => {
+    'use strict';
+
+    // ==================== CONSTANTS & GAMES METADATA ====================
+    const ROOM_PREFIX = 'QIXIA-';
+    const GAMES = [
+      { id: 'xiangqi', name: '中国象棋', icon: '帅', p1: '红方', p2: '黑方', rule: '帅将九宫内走动且不可照面；马走日蹩腿，象走田塞眼，炮隔山打子，兵卒过河可横走。' },
+      { id: 'chess', name: '国际象棋', icon: '♔', p1: '白方', p2: '黑方', rule: '支持王车易位、吃过路兵、兵升变（自动升后）及完整将军/将死/逼和判定。' },
+      { id: 'gomoku', name: '五子棋', icon: '⚫', p1: '黑棋', p2: '白棋', rule: '15×15 标准棋盘，黑先白后，任意方向连成五子即获胜。' },
+      { id: 'reversi', name: '黑白棋', icon: '◐', p1: '黑棋', p2: '白棋', rule: '8×8 棋盘，落子必须夹住对方至少一枚棋子并翻转；无合法步自动停手，棋盘满或双方无子可下时数子胜负。' },
+      { id: 'go', name: '围棋', icon: '⚪', p1: '黑棋', p2: '白棋', rule: '支持提子、禁自杀与打劫规则；双方连续停一手或点击“数子结算”进行中国规则面积数子。' },
+      { id: 'jungle', name: '斗兽棋', icon: '🦁', p1: '红方', p2: '蓝方', rule: '象>狮>虎>豹>狼>狗>猫>鼠，鼠可吃象且可入河；狮虎可跨河（鼠在河中阻挡除外）；进敌方陷阱兽力归零，入兽穴即胜。' },
+      { id: 'tictactoe', name: '井字棋', icon: '✕', p1: 'X 方', p2: 'O 方', rule: '3×3 棋盘，先连成横、竖或斜线三子者获胜。' }
+    ];
+
+    // ==================== STATE ====================
+    const state = {
+      gameId: 'xiangqi',
+      mode: 'p2p', // 'p2p' | 'ai' | 'local'
+      mySide: 1,   // 1 (first player) or 2 (second player)
+      turn: 1,
+      winner: 0,   // 0 = ongoing, 1 = p1, 2 = p2, 3 = draw
+      winReason: '',
+      selected: null,
+      legalTargets: [],
+      lastMove: null,
+      moveCount: 0,
+      history: [],
+      board: null,
+      extra: {},   // game-specific state (castling, enPassant, ko, passes, goSize, winLine)
+      goSize: 9,
+      soundOn: true,
+      peer: null,
+      conn: null,
+      roomId: '',
+      isHost: false,
+      connected: false,
+      aiTimer: null
+    };
+
+    // ==================== AUDIO (Web Audio API) ====================
+    let audioCtx = null;
+    function playTone(type) {
+      if (!state.soundOn) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const now = audioCtx.currentTime;
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        if (type === 'move') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(260, now);
+          osc.frequency.exponentialRampToValueAtTime(110, now + 0.06);
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+          osc.start(now); osc.stop(now + 0.07);
+        } else if (type === 'capture') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(340, now);
+          osc.frequency.exponentialRampToValueAtTime(90, now + 0.09);
+          gain.gain.setValueAtTime(0.2, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+          osc.start(now); osc.stop(now + 0.1);
+        } else if (type === 'check') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(660, now);
+          osc.frequency.setValueAtTime(880, now + 0.08);
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+          osc.start(now); osc.stop(now + 0.22);
+        } else if (type === 'win') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(523, now);
+          osc.frequency.setValueAtTime(659, now + 0.1);
+          osc.frequency.setValueAtTime(784, now + 0.2);
+          gain.gain.setValueAtTime(0.22, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+          osc.start(now); osc.stop(now + 0.45);
+        }
+      } catch (_) {}
+    }
+
+    // ==================== DOM REFS ====================
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const boardWrapper = document.getElementById('boardWrapper');
+    const gameTabsEl = document.getElementById('gameTabs');
+    const connDot = document.getElementById('connDot');
+    const connText = document.getElementById('connText');
+    const roomShareBox = document.getElementById('roomShareBox');
+    const roomCodeDisplay = document.getElementById('roomCodeDisplay');
+    const myRoleBadge = document.getElementById('myRoleBadge');
+    const joinInput = document.getElementById('joinInput');
+    const leaveRoomBtn = document.getElementById('leaveRoomBtn');
+    const goOptionsBox = document.getElementById('goOptionsBox');
+    const passBtn = document.getElementById('passBtn');
+    const scoreGoBtn = document.getElementById('scoreGoBtn');
+    const turnIndicator = document.getElementById('turnIndicator');
+    const turnText = document.getElementById('turnText');
+    const subStatusText = document.getElementById('subStatusText');
+    const p1ScoreLabel = document.getElementById('p1ScoreLabel');
+    const p2ScoreLabel = document.getElementById('p2ScoreLabel');
+    const centerScoreLabel = document.getElementById('centerScoreLabel');
+    const moveCountBadge = document.getElementById('moveCountBadge');
+    const chatLog = document.getElementById('chatLog');
+    const chatInput = document.getElementById('chatInput');
+    const ruleTitle = document.getElementById('ruleTitle');
+    const ruleDesc = document.getElementById('ruleDesc');
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalBody = document.getElementById('modalBody');
+    const modalActions = document.getElementById('modalActions');
+    const toastBox = document.getElementById('toastBox');
+
+    // ==================== UI HELPERS ====================
+    function showToast(msg, type = 'info') {
+      const el = document.createElement('div');
+      const colors = type === 'error' ? 'bg-rose-600 text-white' : type === 'success' ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-100 border border-slate-700';
+      el.className = `px-3.5 py-2 rounded-xl text-xs font-medium shadow-lg pointer-events-auto transition-opacity duration-300 ${colors}`;
+      el.textContent = msg;
+      toastBox.appendChild(el);
+      setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2800);
+    }
+
+    function addLog(text, sender = 'sys') {
+      const div = document.createElement('div');
+      if (sender === 'sys') {
+        div.className = 'text-[11px] text-slate-400 bg-slate-950/60 px-2.5 py-1 rounded-lg border border-slate-800/80';
+        div.textContent = text;
+      } else if (sender === 'me') {
+        div.className = 'flex justify-end';
+        div.innerHTML = `<span class="bg-amber-500/20 text-amber-200 border border-amber-500/30 px-2.5 py-1.5 rounded-xl max-w-[85%] break-words"></span>`;
+        div.querySelector('span').textContent = text;
+      } else {
+        div.className = 'flex justify-start';
+        div.innerHTML = `<span class="bg-slate-800 text-slate-200 border border-slate-700 px-2.5 py-1.5 rounded-xl max-w-[85%] break-words"></span>`;
+        div.querySelector('span').textContent = text;
+      }
+      chatLog.appendChild(div);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function showModal(title, body, buttons) {
+      modalTitle.textContent = title;
+      modalBody.textContent = body;
+      modalActions.innerHTML = '';
+      buttons.forEach(b => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = b.label;
+        btn.className = b.primary
+          ? 'px-3.5 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-semibold transition'
+          : 'px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs border border-slate-700 transition';
+        btn.addEventListener('click', () => {
+          modalOverlay.classList.add('hidden');
+          if (b.onClick) b.onClick();
+        });
+        modalActions.appendChild(btn);
+      });
+      modalOverlay.classList.remove('hidden');
+    }
+
+    function copyText(text, successMsg) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(() => showToast(successMsg, 'success')).catch(() => fallbackCopy(text, successMsg));
+      } else {
+        fallbackCopy(text, successMsg);
+      }
+    }
+    function fallbackCopy(text, successMsg) {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        showToast(successMsg, 'success');
+      } catch (_) {
+        showToast('复制失败，请手动复制', 'error');
+      }
+      ta.remove();
+    }
+
+    // ==================== GAME INITIALIZATION & CLONE ====================
+    function cloneBoard(b) {
+      return b.map(row => row.map(cell => (cell && typeof cell === 'object') ? { ...cell } : cell));
+    }
+
+    function initGame(gameId, preserveNet = false) {
+      if (state.aiTimer) { clearTimeout(state.aiTimer); state.aiTimer = null; }
+      state.gameId = gameId;
+      state.turn = 1;
+      state.winner = 0;
+      state.winReason = '';
+      state.selected = null;
+      state.legalTargets = [];
+      state.lastMove = null;
+      state.moveCount = 0;
+      state.history = [];
+      state.extra = {};
+
+      if (gameId === 'xiangqi') {
+        // 10 rows x 9 cols; side 1 = Red (bottom, rows 5-9), side 2 = Black (top, rows 0-4)
+        const b = Array.from({ length: 10 }, () => Array(9).fill(null));
+        const back = ['R', 'N', 'E', 'A', 'K', 'A', 'E', 'N', 'R'];
+        back.forEach((t, c) => {
+          b[0][c] = { s: 2, t };
+          b[9][c] = { s: 1, t };
+        });
+        b[2][1] = { s: 2, t: 'C' }; b[2][7] = { s: 2, t: 'C' };
+        b[7][1] = { s: 1, t: 'C' }; b[7][7] = { s: 1, t: 'C' };
+        [0, 2, 4, 6, 8].forEach(c => {
+          b[3][c] = { s: 2, t: 'P' };
+          b[6][c] = { s: 1, t: 'P' };
+        });
+        state.board = b;
+      } else if (gameId === 'chess') {
+        const b = Array.from({ length: 8 }, () => Array(8).fill(null));
+        const back = ['R', 'N', 'B', 'Q', 'K', 'B', 'N', 'R'];
+        back.forEach((t, c) => {
+          b[0][c] = { s: 2, t };
+          b[7][c] = { s: 1, t };
+          b[1][c] = { s: 2, t: 'P' };
+          b[6][c] = { s: 1, t: 'P' };
+        });
+        state.board = b;
+        state.extra = {
+          castle: { 1: { K: true, Q: true }, 2: { K: true, Q: true } },
+          enPassant: null
+        };
+      } else if (gameId === 'gomoku') {
+        state.board = Array.from({ length: 15 }, () => Array(15).fill(0));
+      } else if (gameId === 'reversi') {
+        const b = Array.from({ length: 8 }, () => Array(8).fill(0));
+        b[3][3] = 2; b[3][4] = 1;
+        b[4][3] = 1; b[4][4] = 2;
+        state.board = b;
+      } else if (gameId === 'go') {
+        const sz = state.goSize;
+        state.board = Array.from({ length: sz }, () => Array(sz).fill(0));
+        state.extra = { captures: { 1: 0, 2: 0 }, ko: null, passes: 0 };
+      } else if (gameId === 'jungle') {
+        // 9 rows x 7 cols; side 1 = Red (bottom), side 2 = Blue (top)
+        const b = Array.from({ length: 9 }, () => Array(7).fill(null));
+        // Ranks: 8=象, 7=狮, 6=虎, 5=豹, 4=狼, 3=狗, 2=猫, 1=鼠
+        // Blue (top, side 2)
+        b[0][0] = { s: 2, r: 7 }; b[0][6] = { s: 2, r: 6 };
+        b[1][1] = { s: 2, r: 3 }; b[1][5] = { s: 2, r: 2 };
+        b[2][0] = { s: 2, r: 1 }; b[2][2] = { s: 2, r: 5 }; b[2][4] = { s: 2, r: 4 }; b[2][6] = { s: 2, r: 8 };
+        // Red (bottom, side 1)
+        b[8][6] = { s: 1, r: 7 }; b[8][0] = { s: 1, r: 6 };
+        b[7][5] = { s: 1, r: 3 }; b[7][1] = { s: 1, r: 2 };
+        b[6][6] = { s: 1, r: 1 }; b[6][4] = { s: 1, r: 5 }; b[6][2] = { s: 1, r: 4 }; b[6][0] = { s: 1, r: 8 };
+        state.board = b;
+      } else if (gameId === 'tictactoe') {
+        state.board = Array.from({ length: 3 }, () => Array(3).fill(0));
+      }
+
+      if (!preserveNet) {
+        addLog(`已切换至「${getGameMeta().name}」`);
+      }
+      renderGameTabs();
+      updateUI();
+      resizeAndDraw();
+    }
+
+    function getGameMeta() {
+      return GAMES.find(g => g.id === state.gameId);
+    }
+
+    // ==================== GAME RULES ENGINES ====================
+    // --- 1. XIANGQI ---
+    function xiangqiInBounds(r, c) { return r >= 0 && r < 10 && c >= 0 && c < 9; }
+    function xiangqiPseudoMoves(b, r, c) {
+      const p = b[r][c];
+      if (!p) return [];
+      const moves = [];
+      const s = p.s;
+      const add = (nr, nc) => {
+        if (!xiangqiInBounds(nr, nc)) return false;
+        const target = b[nr][nc];
+        if (target && target.s === s) return false;
+        moves.push([nr, nc]);
+        return !target;
+      };
+
+      if (p.t === 'K') {
+        const rMin = s === 1 ? 7 : 0, rMax = s === 1 ? 9 : 2;
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => {
+          const nr = r + dr, nc = c + dc;
+          if (nr >= rMin && nr <= rMax && nc >= 3 && nc <= 5) add(nr, nc);
+        });
+      } else if (p.t === 'A') {
+        const rMin = s === 1 ? 7 : 0, rMax = s === 1 ? 9 : 2;
+        [[1,1],[1,-1],[-1,1],[-1,-1]].forEach(([dr, dc]) => {
+          const nr = r + dr, nc = c + dc;
+          if (nr >= rMin && nr <= rMax && nc >= 3 && nc <= 5) add(nr, nc);
+        });
+      } else if (p.t === 'E') {
+        const rMin = s === 1 ? 5 : 0, rMax = s === 1 ? 9 : 4;
+        [[2,2],[2,-2],[-2,2],[-2,-2]].forEach(([dr, dc]) => {
+          const nr = r + dr, nc = c + dc;
+          if (nr >= rMin && nr <= rMax && nc >= 0 && nc < 9 && !b[r + dr/2][c + dc/2]) add(nr, nc);
+        });
+      } else if (p.t === 'N') {
+        [[-2,-1,-1,0],[-2,1,-1,0],[2,-1,1,0],[2,1,1,0],[-1,-2,0,-1],[1,-2,0,-1],[-1,2,0,1],[1,2,0,1]].forEach(([dr, dc, lr, lc]) => {
+          if (xiangqiInBounds(r + lr, c + lc) && !b[r + lr][c + lc]) add(r + dr, c + dc);
+        });
+      } else if (p.t === 'R') {
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => {
+          for (let k = 1; k < 10; k++) { if (!add(r + dr*k, c + dc*k)) break; }
+        });
+      } else if (p.t === 'C') {
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => {
+          let jumped = false;
+          for (let k = 1; k < 10; k++) {
+            const nr = r + dr*k, nc = c + dc*k;
+            if (!xiangqiInBounds(nr, nc)) break;
+            if (!jumped) {
+              if (!b[nr][nc]) moves.push([nr, nc]);
+              else jumped = true;
+            } else {
+              if (b[nr][nc]) {
+                if (b[nr][nc].s !== s) moves.push([nr, nc]);
+                break;
+              }
+            }
+          }
+        });
+      } else if (p.t === 'P') {
+        const fwd = s === 1 ? -1 : 1;
+        add(r + fwd, c);
+        const crossed = s === 1 ? r <= 4 : r >= 5;
+        if (crossed) { add(r, c - 1); add(r, c + 1); }
+      }
+      return moves;
+    }
+
+    function xiangqiKingsFacing(b) {
+      let k1 = null, k2 = null;
+      for (let r = 0; r < 10; r++) {
+        for (let c = 3; c <= 5; c++) {
+          if (b[r][c] && b[r][c].t === 'K') {
+            if (b[r][c].s === 1) k1 = [r, c]; else k2 = [r, c];
+          }
+        }
+      }
+      if (!k1 || !k2 || k1[1] !== k2[1]) return false;
+      for (let r = k2[0] + 1; r < k1[0]; r++) {
+        if (b[r][k1[1]]) return false;
+      }
+      return true;
+    }
+
+    function xiangqiInCheck(b, side) {
+      let kr = -1, kc = -1;
+      for (let r = 0; r < 10; r++) {
+        for (let c = 3; c <= 5; c++) {
+          if (b[r][c] && b[r][c].s === side && b[r][c].t === 'K') { kr = r; kc = c; }
+        }
+      }
+      if (kr === -1) return true;
+      if (xiangqiKingsFacing(b)) return true;
+      const opp = 3 - side;
+      for (let r = 0; r < 10; r++) {
+        for (let c = 0; c < 9; c++) {
+          if (b[r][c] && b[r][c].s === opp) {
+            const ms = xiangqiPseudoMoves(b, r, c);
+            if (ms.some(([mr, mc]) => mr === kr && mc === kc)) return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    function xiangqiLegalMoves(b, r, c) {
+      const p = b[r][c];
+      if (!p) return [];
+      return xiangqiPseudoMoves(b, r, c).filter(([nr, nc]) => {
+        const nb = cloneBoard(b);
+        nb[nr][nc] = nb[r][c];
+        nb[r][c] = null;
+        return !xiangqiInCheck(nb, p.s);
+      });
+    }
+
+    // --- 2. CHESS ---
+    function chessInBounds(r, c) { return r >= 0 && r < 8 && c >= 0 && c < 8; }
+    function chessPseudoMoves(b, r, c, extra, includeCastle = true) {
+      const p = b[r][c];
+      if (!p) return [];
+      const s = p.s, opp = 3 - s;
+      const moves = [];
+      const add = (nr, nc) => {
+        if (!chessInBounds(nr, nc)) return false;
+        const t = b[nr][nc];
+        if (t && t.s === s) return false;
+        moves.push([nr, nc]);
+        return !t;
+      };
+
+      if (p.t === 'P') {
+        const dir = s === 1 ? -1 : 1;
+        const startRow = s === 1 ? 6 : 1;
+        if (chessInBounds(r + dir, c) && !b[r + dir][c]) {
+          moves.push([r + dir, c]);
+          if (r === startRow && !b[r + 2 * dir][c]) moves.push([r + 2 * dir, c]);
+        }
+        [-1, 1].forEach(dc => {
+          const nr = r + dir, nc = c + dc;
+          if (chessInBounds(nr, nc)) {
+            if (b[nr][nc] && b[nr][nc].s === opp) moves.push([nr, nc]);
+            else if (extra && extra.enPassant && extra.enPassant[0] === nr && extra.enPassant[1] === nc) moves.push([nr, nc]);
+          }
+        });
+      } else if (p.t === 'N') {
+        [[-2,-1],[-2,1],[2,-1],[2,1],[-1,-2],[1,-2],[-1,2],[1,2]].forEach(([dr, dc]) => add(r + dr, c + dc));
+      } else if (p.t === 'B' || p.t === 'R' || p.t === 'Q') {
+        const dirs = [];
+        if (p.t !== 'B') dirs.push([1,0],[-1,0],[0,1],[0,-1]);
+        if (p.t !== 'R') dirs.push([1,1],[1,-1],[-1,1],[-1,-1]);
+        dirs.forEach(([dr, dc]) => { for (let k = 1; k < 8; k++) if (!add(r + dr*k, c + dc*k)) break; });
+      } else if (p.t === 'K') {
+        for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) if (dr || dc) add(r + dr, c + dc);
+        if (includeCastle && extra && extra.castle && extra.castle[s]) {
+          const row = s === 1 ? 7 : 0;
+          if (r === row && c === 4 && !chessSquareAttacked(b, row, 4, opp)) {
+            if (extra.castle[s].K && !b[row][5] && !b[row][6] && b[row][7] && b[row][7].t === 'R' && b[row][7].s === s) {
+              if (!chessSquareAttacked(b, row, 5, opp) && !chessSquareAttacked(b, row, 6, opp)) moves.push([row, 6]);
+            }
+            if (extra.castle[s].Q && !b[row][3] && !b[row][2] && !b[row][1] && b[row][0] && b[row][0].t === 'R' && b[row][0].s === s) {
+              if (!chessSquareAttacked(b, row, 3, opp) && !chessSquareAttacked(b, row, 2, opp)) moves.push([row, 2]);
+            }
+          }
+        }
+      }
+      return moves;
+    }
+
+    function chessSquareAttacked(b, tr, tc, bySide) {
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const p = b[r][c];
+          if (p && p.s === bySide) {
+            if (p.t === 'P') {
+              const dir = bySide === 1 ? -1 : 1;
+              if (r + dir === tr && (c - 1 === tc || c + 1 === tc)) return true;
+            } else {
+              const ms = chessPseudoMoves(b, r, c, null, false);
+              if (ms.some(([mr, mc]) => mr === tr && mc === tc)) return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    function chessInCheck(b, side) {
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if (b[r][c] && b[r][c].s === side && b[r][c].t === 'K') {
+            return chessSquareAttacked(b, r, c, 3 - side);
+          }
+        }
+      }
+      return false;
+    }
+
+    function chessLegalMoves(b, r, c, extra) {
+      const p = b[r][c];
+      if (!p) return [];
+      return chessPseudoMoves(b, r, c, extra, true).filter(([nr, nc]) => {
+        const nb = cloneBoard(b);
+        if (p.t === 'P' && extra && extra.enPassant && nr === extra.enPassant[0] && nc === extra.enPassant[1]) {
+          nb[r][nc] = null;
+        }
+        nb[nr][nc] = nb[r][c];
+        nb[r][c] = null;
+        return !chessInCheck(nb, p.s);
+      });
+    }
+
+    // --- 3. REVERSI ---
+    function reversiFlips(b, r, c, side) {
+      if (b[r][c] !== 0) return [];
+      const opp = 3 - side;
+      const flips = [];
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (!dr && !dc) continue;
+          const line = [];
+          let nr = r + dr, nc = c + dc;
+          while (nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && b[nr][nc] === opp) {
+            line.push([nr, nc]);
+            nr += dr; nc += dc;
+          }
+          if (line.length > 0 && nr >= 0 && nr < 8 && nc >= 0 && nc < 8 && b[nr][nc] === side) {
+            flips.push(...line);
+          }
+        }
+      }
+      return flips;
+    }
+
+    function reversiAllLegal(b, side) {
+      const res = [];
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          if (reversiFlips(b, r, c, side).length > 0) res.push([r, c]);
+        }
+      }
+      return res;
+    }
+
+    // --- 4. GO (WEIQI) ---
+    function goGroupAndLiberties(b, r, c) {
+      const sz = b.length;
+      const color = b[r][c];
+      const visited = new Set([`${r},${c}`]);
+      const group = [[r, c]];
+      const liberties = new Set();
+      let idx = 0;
+      while (idx < group.length) {
+        const [cr, cc] = group[idx++];
+        [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => {
+          const nr = cr + dr, nc = cc + dc;
+          if (nr < 0 || nr >= sz || nc < 0 || nc >= sz) return;
+          if (b[nr][nc] === 0) liberties.add(`${nr},${nc}`);
+          else if (b[nr][nc] === color && !visited.has(`${nr},${nc}`)) {
+            visited.add(`${nr},${nc}`);
+            group.push([nr, nc]);
+          }
+        });
+      }
+      return { group, liberties: liberties.size };
+    }
+
+    function goTryMove(b, r, c, side, koPoint) {
+      const sz = b.length;
+      if (b[r][c] !== 0) return null;
+      if (koPoint && koPoint[0] === r && koPoint[1] === c) return null;
+      const nb = b.map(row => [...row]);
+      nb[r][c] = side;
+      const opp = 3 - side;
+      let captured = [];
+      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => {
+        const nr = r + dr, nc = c + dc;
+        if (nr >= 0 && nr < sz && nc >= 0 && nc < sz && nb[nr][nc] === opp) {
+          const { group, liberties } = goGroupAndLiberties(nb, nr, nc);
+          if (liberties === 0) {
+            group.forEach(([gr, gc]) => { nb[gr][gc] = 0; captured.push([gr, gc]); });
+          }
+        }
+      });
+      const self = goGroupAndLiberties(nb, r, c);
+      if (self.liberties === 0) return null; // suicide forbidden
+      let nextKo = null;
+      if (captured.length === 1 && self.group.length === 1 && self.liberties === 1) {
+        nextKo = captured[0];
+      }
+      return { nb, capturedCount: captured.length, nextKo };
+    }
+
+    function goScoreChinese(b) {
+      const sz = b.length;
+      const seen = Array.from({ length: sz }, () => Array(sz).fill(false));
+      let s1 = 0, s2 = 0;
+      for (let r = 0; r < sz; r++) {
+        for (let c = 0; c < sz; c++) {
+          if (b[r][c] === 1) s1++;
+          else if (b[r][c] === 2) s2++;
+          else if (!seen[r][c]) {
+            const q = [[r, c]];
+            seen[r][c] = true;
+            const region = [[r, c]];
+            const touches = new Set();
+            let i = 0;
+            while (i < q.length) {
+              const [cr, cc] = q[i++];
+              [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => {
+                const nr = cr + dr, nc = cc + dc;
+                if (nr < 0 || nr >= sz || nc < 0 || nc >= sz) return;
+                if (b[nr][nc] === 0 && !seen[nr][nc]) {
+                  seen[nr][nc] = true;
+                  q.push([nr, nc]);
+                  region.push([nr, nc]);
+                } else if (b[nr][nc] !== 0) touches.add(b[nr][nc]);
+              });
+            }
+            if (touches.size === 1) {
+              if (touches.has(1)) s1 += region.length;
+              else s2 += region.length;
+            }
+          }
+        }
+      }
+      return { s1, s2 };
+    }
+
+    // --- 5. JUNGLE (DOU SHOU QI) ---
+    function jungleIsWater(r, c) {
+      return (r >= 3 && r <= 5) && ((c >= 1 && c <= 2) || (c >= 4 && c <= 5));
+    }
+    function jungleIsTrap(r, c, oppSide) {
+      if (oppSide === 2) return (r === 0 && (c === 2 || c === 4)) || (r === 1 && c === 3);
+      return (r === 8 && (c === 2 || c === 4)) || (r === 7 && c === 3);
+    }
+    function jungleIsDen(r, c, side) {
+      return side === 1 ? (r === 8 && c === 3) : (r === 0 && c === 3);
+    }
+    function jungleLegalMoves(b, r, c) {
+      const p = b[r][c];
+      if (!p) return [];
+      const s = p.s;
+      const moves = [];
+      const canCapture = (attR, attC, defR, defC) => {
+        const def = b[defR][defC];
+        if (!def) return true;
+        if (def.s === s) return false;
+        if (jungleIsTrap(defR, defC, s)) return true;
+        const attWater = jungleIsWater(attR, attC);
+        const defWater = jungleIsWater(defR, defC);
+        if (attWater !== defWater) return false;
+        if (p.r === 1 && def.r === 8) return true;
+        if (p.r === 8 && def.r === 1) return false;
+        return p.r >= def.r;
+      };
+
+      [[1,0],[-1,0],[0,1],[0,-1]].forEach(([dr, dc]) => {
+        let nr = r + dr, nc = c + dc;
+        if (nr < 0 || nr >= 9 || nc < 0 || nc >= 7) return;
+        if (jungleIsDen(nr, nc, s)) return; // cannot enter own den
+        if (jungleIsWater(nr, nc)) {
+          if (p.r === 1) {
+            if (canCapture(r, c, nr, nc)) moves.push([nr, nc]);
+          } else if (p.r === 6 || p.r === 7) {
+            // Tiger or Lion jumps over river if no rat in path
+            let blocked = false;
+            while (nr >= 0 && nr < 9 && nc >= 0 && nc < 7 && jungleIsWater(nr, nc)) {
+              if (b[nr][nc]) { blocked = true; break; }
+              nr += dr; nc += dc;
+            }
+            if (!blocked && nr >= 0 && nr < 9 && nc >= 0 && nc < 7 && !jungleIsDen(nr, nc, s)) {
+              if (canCapture(r, c, nr, nc)) moves.push([nr, nc]);
+            }
+          }
+        } else {
+          if (canCapture(r, c, nr, nc)) moves.push([nr, nc]);
+        }
+      });
+      return moves;
+    }
+
+    // --- 6. GOMOKU & TICTACTOE WIN CHECK ---
+    function checkLineWin(b, r, c, need) {
+      const sz = b.length;
+      const side = b[r][c];
+      if (!side) return null;
+      for (const [dr, dc] of [[0,1],[1,0],[1,1],[1,-1]]) {
+        const line = [[r, c]];
+        for (let k = 1; k < need; k++) {
+          const nr = r + dr*k, nc = c + dc*k;
+          if (nr >= 0 && nr < sz && nc >= 0 && nc < sz && b[nr][nc] === side) line.push([nr, nc]);
+          else break;
+        }
+        for (let k = 1; k < need; k++) {
+          const nr = r - dr*k, nc = c - dc*k;
+          if (nr >= 0 && nr < sz && nc >= 0 && nc < sz && b[nr][nc] === side) line.push([nr, nc]);
+          else break;
+        }
+        if (line.length >= need) return line;
+      }
+      return null;
+    }
+
+    // ==================== UNIFIED MOVE EXECUTION ====================
+    function getAllMovesForSide(side) {
+      const all = [];
+      if (state.gameId === 'xiangqi') {
+        for (let r = 0; r < 10; r++) for (let c = 0; c < 9; c++) {
+          if (state.board[r][c] && state.board[r][c].s === side) {
+            xiangqiLegalMoves(state.board, r, c).forEach(([nr, nc]) => all.push({ from: [r, c], to: [nr, nc] }));
+          }
+        }
+      } else if (state.gameId === 'chess') {
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+          if (state.board[r][c] && state.board[r][c].s === side) {
+            chessLegalMoves(state.board, r, c, state.extra).forEach(([nr, nc]) => all.push({ from: [r, c], to: [nr, nc] }));
+          }
+        }
+      } else if (state.gameId === 'jungle') {
+        for (let r = 0; r < 9; r++) for (let c = 0; c < 7; c++) {
+          if (state.board[r][c] && state.board[r][c].s === side) {
+            jungleLegalMoves(state.board, r, c).forEach(([nr, nc]) => all.push({ from: [r, c], to: [nr, nc] }));
+          }
+        }
+      } else if (state.gameId === 'reversi') {
+        reversiAllLegal(state.board, side).forEach(([r, c]) => all.push({ to: [r, c] }));
+      } else if (state.gameId === 'gomoku' || state.gameId === 'tictactoe') {
+        const sz = state.board.length;
+        for (let r = 0; r < sz; r++) for (let c = 0; c < sz; c++) {
+          if (state.board[r][c] === 0) all.push({ to: [r, c] });
+        }
+      } else if (state.gameId === 'go') {
+        const sz = state.board.length;
+        for (let r = 0; r < sz; r++) for (let c = 0; c < sz; c++) {
+          if (goTryMove(state.board, r, c, side, state.extra.ko)) all.push({ to: [r, c] });
+        }
+      }
+      return all;
+    }
+
+    function applyMove(move, isRemote = false) {
+      if (state.winner !== 0) return false;
+      // Save snapshot for Undo
+      state.history.push({
+        board: cloneBoard(state.board),
+        turn: state.turn,
+        lastMove: state.lastMove ? JSON.parse(JSON.stringify(state.lastMove)) : null,
+        moveCount: state.moveCount,
+        extra: JSON.parse(JSON.stringify(state.extra))
+      });
+
+      const side = state.turn;
+      const opp = 3 - side;
+      let captured = false;
+
+      if (move.pass && state.gameId === 'go') {
+        state.extra.passes = (state.extra.passes || 0) + 1;
+        state.extra.ko = null;
+        state.lastMove = null;
+        state.moveCount++;
+        addLog(`${side === 1 ? '黑棋' : '白棋'} 停一手 (Pass)`);
+        if (state.extra.passes >= 2) {
+          finishGoGame();
+        } else {
+          state.turn = opp;
+        }
+      } else if (state.gameId === 'xiangqi') {
+        const [fr, fc] = move.from, [tr, tc] = move.to;
+        captured = !!state.board[tr][tc];
+        state.board[tr][tc] = state.board[fr][fc];
+        state.board[fr][fc] = null;
+        state.lastMove = { from: [fr, fc], to: [tr, tc] };
+        state.moveCount++;
+        state.turn = opp;
+        if (getAllMovesForSide(opp).length === 0) {
+          state.winner = side;
+          state.winReason = xiangqiInCheck(state.board, opp) ? '绝杀将死！' : '困毙！';
+        } else if (xiangqiInCheck(state.board, opp)) {
+          playTone('check');
+        }
+      } else if (state.gameId === 'chess') {
+        const [fr, fc] = move.from, [tr, tc] = move.to;
+        const piece = state.board[fr][fc];
+        captured = !!state.board[tr][tc];
+        // En passant capture
+        if (piece.t === 'P' && state.extra.enPassant && tr === state.extra.enPassant[0] && tc === state.extra.enPassant[1]) {
+          state.board[fr][tc] = null;
+          captured = true;
+        }
+        // Castling rook move
+        if (piece.t === 'K' && Math.abs(tc - fc) === 2) {
+          const row = side === 1 ? 7 : 0;
+          if (tc === 6) { state.board[row][5] = state.board[row][7]; state.board[row][7] = null; }
+          else { state.board[row][3] = state.board[row][0]; state.board[row][0] = null; }
+        }
+        // Update castling rights
+        if (piece.t === 'K') { state.extra.castle[side].K = false; state.extra.castle[side].Q = false; }
+        if (piece.t === 'R') {
+          if (fc === 0) state.extra.castle[side].Q = false;
+          if (fc === 7) state.extra.castle[side].K = false;
+        }
+        // En passant target
+        state.extra.enPassant = (piece.t === 'P' && Math.abs(tr - fr) === 2) ? [(fr + tr) / 2, fc] : null;
+        state.board[tr][tc] = piece;
+        state.board[fr][fc] = null;
+        // Pawn auto-promotion to Queen
+        if (piece.t === 'P' && (tr === 0 || tr === 7)) {
+          state.board[tr][tc] = { s: side, t: 'Q' };
+        }
+        state.lastMove = { from: [fr, fc], to: [tr, tc] };
+        state.moveCount++;
+        state.turn = opp;
+        if (getAllMovesForSide(opp).length === 0) {
+          if (chessInCheck(state.board, opp)) {
+            state.winner = side; state.winReason = '将杀 (Checkmate)！';
+          } else {
+            state.winner = 3; state.winReason = '无子可动 (Stalemate) 和棋！';
+          }
+        } else if (chessInCheck(state.board, opp)) {
+          playTone('check');
+        }
+      } else if (state.gameId === 'gomoku') {
+        const [tr, tc] = move.to;
+        state.board[tr][tc] = side;
+        state.lastMove = { to: [tr, tc] };
+        state.moveCount++;
+        const winLine = checkLineWin(state.board, tr, tc, 5);
+        if (winLine) {
+          state.winner = side; state.extra.winLine = winLine; state.winReason = '五子连珠！';
+        } else if (state.moveCount >= 225) {
+          state.winner = 3; state.winReason = '棋盘已满，平局！';
+        } else {
+          state.turn = opp;
+        }
+      } else if (state.gameId === 'tictactoe') {
+        const [tr, tc] = move.to;
+        state.board[tr][tc] = side;
+        state.lastMove = { to: [tr, tc] };
+        state.moveCount++;
+        const winLine = checkLineWin(state.board, tr, tc, 3);
+        if (winLine) {
+          state.winner = side; state.extra.winLine = winLine; state.winReason = '三子连线！';
+        } else if (state.moveCount >= 9) {
+          state.winner = 3; state.winReason = '平局！';
+        } else {
+          state.turn = opp;
+        }
+      } else if (state.gameId === 'reversi') {
+        const [tr, tc] = move.to;
+        const flips = reversiFlips(state.board, tr, tc, side);
+        if (flips.length === 0) { state.history.pop(); return false; }
+        state.board[tr][tc] = side;
+        flips.forEach(([fr, fc]) => { state.board[fr][fc] = side; });
+        captured = flips.length > 0;
+        state.lastMove = { to: [tr, tc] };
+        state.moveCount++;
+        if (reversiAllLegal(state.board, opp).length > 0) {
+          state.turn = opp;
+        } else if (reversiAllLegal(state.board, side).length > 0) {
+          showToast(`${opp === 1 ? '黑棋' : '白棋'}无合法步，继续由${side === 1 ? '黑棋' : '白棋'}落子`);
+          state.turn = side;
+        } else {
+          let c1 = 0, c2 = 0;
+          state.board.forEach(row => row.forEach(v => { if (v === 1) c1++; else if (v === 2) c2++; }));
+          state.winner = c1 > c2 ? 1 : c2 > c1 ? 2 : 3;
+          state.winReason = `终局数子：黑 ${c1} : 白 ${c2}`;
+        }
+      } else if (state.gameId === 'go') {
+        const [tr, tc] = move.to;
+        const res = goTryMove(state.board, tr, tc, side, state.extra.ko);
+        if (!res) { state.history.pop(); return false; }
+        state.board = res.nb;
+        state.extra.captures[side] += res.capturedCount;
+        state.extra.ko = res.nextKo;
+        state.extra.passes = 0;
+        captured = res.capturedCount > 0;
+        state.lastMove = { to: [tr, tc] };
+        state.moveCount++;
+        state.turn = opp;
+      } else if (state.gameId === 'jungle') {
+        const [fr, fc] = move.from, [tr, tc] = move.to;
+        captured = !!state.board[tr][tc];
+        state.board[tr][tc] = state.board[fr][fc];
+        state.board[fr][fc] = null;
+        state.lastMove = { from: [fr, fc], to: [tr, tc] };
+        state.moveCount++;
+        if (jungleIsDen(tr, tc, opp)) {
+          state.winner = side; state.winReason = '攻入敌方兽穴！';
+        } else {
+          // Also check if opponent has any pieces or moves left
+          if (getAllMovesForSide(opp).length === 0) {
+            state.winner = side; state.winReason = '对方无子可走！';
+          } else {
+            state.turn = opp;
+          }
+        }
+      }
+
+      state.selected = null;
+      state.legalTargets = [];
+
+      if (state.winner !== 0) playTone('win');
+      else if (captured) playTone('capture');
+      else playTone('move');
+
+      if (!isRemote && state.mode === 'p2p' && state.connected && state.conn) {
+        state.conn.send({ type: 'move', move });
+      }
+
+      updateUI();
+      resizeAndDraw();
+
+      if (state.winner === 0 && state.mode === 'ai' && state.turn === 2) {
+        state.aiTimer = setTimeout(runSimpleAI, 360);
+      }
+      return true;
+    }
+
+    function finishGoGame() {
+      const { s1, s2 } = goScoreChinese(state.board);
+      const komi = state.goSize === 9 ? 5.5 : 6.5; // simplified komi
+      const wScore = s2 + komi;
+      state.winner = s1 > wScore ? 1 : 2;
+      state.winReason = `面积数子：黑 ${s1} vs 白 ${s2} + ${komi}贴目 = ${wScore}`;
+      playTone('win');
+      updateUI();
+      resizeAndDraw();
+    }
+
+    // ==================== SIMPLE AI FOR SOLO PLAY ====================
+    function runSimpleAI() {
+      if (state.winner !== 0 || state.turn !== 2 || state.mode !== 'ai') return;
+      const moves = getAllMovesForSide(2);
+      if (moves.length === 0) {
+        if (state.gameId === 'go') applyMove({ pass: true }, true);
+        return;
+      }
+
+      let chosen = moves[Math.floor(Math.random() * moves.length)];
+
+      if (state.gameId === 'tictactoe' || state.gameId === 'gomoku') {
+        const need = state.gameId === 'tictactoe' ? 3 : 5;
+        // 1) Win immediately if possible, 2) Block opponent, 3) Near center / existing stones
+        let bestScore = -1e9;
+        for (const m of moves) {
+          const [r, c] = m.to;
+          state.board[r][c] = 2;
+          if (checkLineWin(state.board, r, c, need)) { state.board[r][c] = 0; chosen = m; break; }
+          state.board[r][c] = 1;
+          const blocks = checkLineWin(state.board, r, c, need) ? 1000 : 0;
+          state.board[r][c] = 0;
+          const mid = (state.board.length - 1) / 2;
+          const dist = -(Math.abs(r - mid) + Math.abs(c - mid));
+          let adj = 0;
+          for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+            const nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < state.board.length && nc >= 0 && nc < state.board.length && state.board[nr][nc] !== 0) adj += 12;
+          }
+          const score = blocks + adj + dist + Math.random() * 2;
+          if (score > bestScore) { bestScore = score; chosen = m; }
+        }
+      } else if (state.gameId === 'reversi') {
+        const weights = [100,-20,10,5,5,10,-20,100];
+        let best = -1e9;
+        for (const m of moves) {
+          const [r, c] = m.to;
+          const flips = reversiFlips(state.board, r, c, 2).length;
+          const corner = ((r === 0 || r === 7) && (c === 0 || c === 7)) ? 120 : 0;
+          const sc = corner + flips * 3 + weights[r] * 0.2 + weights[c] * 0.2 + Math.random();
+          if (sc > best) { best = sc; chosen = m; }
+        }
+      } else if (state.gameId === 'xiangqi' || state.gameId === 'chess' || state.gameId === 'jungle') {
+        const val = { K: 900, Q: 90, R: 50, C: 45, N: 35, B: 30, E: 20, A: 20, P: 10 };
+        let best = -1e9;
+        for (const m of moves) {
+          const [tr, tc] = m.to;
+          const target = state.board[tr][tc];
+          let sc = Math.random() * 4;
+          if (target) sc += (target.r ? target.r * 15 : (val[target.t] || 15));
+          if (state.gameId === 'jungle' && jungleIsDen(tr, tc, 1)) sc += 9999;
+          if (sc > best) { best = sc; chosen = m; }
+        }
+      }
+      applyMove(chosen, true);
+    }
+
+    // ==================== CANVAS RENDERING ====================
+    function getGridSpec() {
+      const w = canvas.width, h = canvas.height;
+      if (state.gameId === 'xiangqi') {
+        const pad = w * 0.08;
+        const cw = (w - pad * 2) / 8;
+        const ch = (h - pad * 2) / 9;
+        return { rows: 10, cols: 9, padX: pad, padY: pad, cw, ch, onGrid: true };
+      } else if (state.gameId === 'gomoku') {
+        const pad = w * 0.055;
+        const cw = (w - pad * 2) / 14;
+        return { rows: 15, cols: 15, padX: pad, padY: pad, cw, ch: cw, onGrid: true };
+      } else if (state.gameId === 'go') {
+        const sz = state.goSize;
+        const pad = w * 0.06;
+        const cw = (w - pad * 2) / (sz - 1);
+        return { rows: sz, cols: sz, padX: pad, padY: pad, cw, ch: cw, onGrid: true };
+      } else if (state.gameId === 'chess' || state.gameId === 'reversi') {
+        const pad = w * 0.04;
+        const cw = (w - pad * 2) / 8;
+        return { rows: 8, cols: 8, padX: pad, padY: pad, cw, ch: cw, onGrid: false };
+      } else if (state.gameId === 'jungle') {
+        const padX = w * 0.05, padY = h * 0.04;
+        const cw = (w - padX * 2) / 7;
+        const ch = (h - padY * 2) / 9;
+        return { rows: 9, cols: 7, padX, padY, cw, ch, onGrid: false };
+      } else {
+        const pad = w * 0.06;
+        const cw = (w - pad * 2) / 3;
+        return { rows: 3, cols: 3, padX: pad, padY: pad, cw, ch: cw, onGrid: false };
+      }
+    }
+
+    function resizeAndDraw() {
+      const wrapW = Math.min(540, Math.max(260, boardWrapper.clientWidth - 24));
+      let aspect = 1;
+      if (state.gameId === 'xiangqi') aspect = 10 / 9;
+      else if (state.gameId === 'jungle') aspect = 9 / 7;
+
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = wrapW;
+      const cssH = Math.round(wrapW * aspect);
+      canvas.style.width = cssW + 'px';
+      canvas.style.height = cssH + 'px';
+      canvas.width = Math.round(cssW * dpr);
+      canvas.height = Math.round(cssH * dpr);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      drawBoard();
+    }
+
+    function drawBoard() {
+      const w = canvas.width, h = canvas.height;
+      const g = getGridSpec();
+      ctx.clearRect(0, 0, w, h);
+
+      if (state.gameId === 'xiangqi') drawXiangqi(g, w, h);
+      else if (state.gameId === 'chess') drawChess(g, w, h);
+      else if (state.gameId === 'gomoku' || state.gameId === 'go') drawGoban(g, w, h);
+      else if (state.gameId === 'reversi') drawReversi(g, w, h);
+      else if (state.gameId === 'jungle') drawJungle(g, w, h);
+      else if (state.gameId === 'tictactoe') drawTicTacToe(g, w, h);
+    }
+
+    function drawXiangqi(g, w, h) {
+      ctx.fillStyle = '#e7c185';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#5c3a16';
+      ctx.lineWidth = Math.max(1.5, w * 0.003);
+
+      // Outer border
+      ctx.strokeRect(g.padX - 4, g.padY - 4, g.cw * 8 + 8, g.ch * 9 + 8);
+      // Horizontal lines
+      for (let r = 0; r < 10; r++) {
+        ctx.beginPath();
+        ctx.moveTo(g.padX, g.padY + r * g.ch);
+        ctx.lineTo(g.padX + 8 * g.cw, g.padY + r * g.ch);
+        ctx.stroke();
+      }
+      // Vertical lines (split at river)
+      for (let c = 0; c < 9; c++) {
+        ctx.beginPath();
+        ctx.moveTo(g.padX + c * g.cw, g.padY);
+        ctx.lineTo(g.padX + c * g.cw, g.padY + (c === 0 || c === 8 ? 9 : 4) * g.ch);
+        ctx.stroke();
+        if (c > 0 && c < 8) {
+          ctx.beginPath();
+          ctx.moveTo(g.padX + c * g.cw, g.padY + 5 * g.ch);
+          ctx.lineTo(g.padX + c * g.cw, g.padY + 9 * g.ch);
+          ctx.stroke();
+        }
+      }
+      // Palaces
+      [[0, 2], [7, 9]].forEach(([r1, r2]) => {
+        ctx.beginPath();
+        ctx.moveTo(g.padX + 3 * g.cw, g.padY + r1 * g.ch);
+        ctx.lineTo(g.padX + 5 * g.cw, g.padY + r2 * g.ch);
+        ctx.moveTo(g.padX + 5 * g.cw, g.padY + r1 * g.ch);
+        ctx.lineTo(g.padX + 3 * g.cw, g.padY + r2 * g.ch);
+        ctx.stroke();
+      });
+
+      // River Text
+      ctx.fillStyle = '#5c3a16';
+      ctx.font = `bold ${Math.round(g.ch * 0.45)}px serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('楚 河', g.padX + 2 * g.cw, g.padY + 4.5 * g.ch);
+      ctx.fillText('汉 界', g.padX + 6 * g.cw, g.padY + 4.5 * g.ch);
+
+      // Last move & legal hints
+      if (state.lastMove) {
+        [state.lastMove.from, state.lastMove.to].forEach(([r, c]) => {
+          ctx.strokeStyle = 'rgba(14, 165, 233, 0.85)';
+          ctx.lineWidth = Math.max(2, w * 0.005);
+          ctx.strokeRect(g.padX + c * g.cw - g.cw * 0.44, g.padY + r * g.ch - g.ch * 0.44, g.cw * 0.88, g.ch * 0.88);
+        });
+      }
+      state.legalTargets.forEach(([r, c]) => {
+        ctx.fillStyle = state.board[r][c] ? 'rgba(239, 68, 68, 0.45)' : 'rgba(16, 185, 129, 0.65)';
+        ctx.beginPath();
+        ctx.arc(g.padX + c * g.cw, g.padY + r * g.ch, g.cw * (state.board[r][c] ? 0.44 : 0.16), 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Pieces
+      const labels1 = { K: '帅', A: '仕', E: '相', N: '马', R: '车', C: '炮', P: '兵' };
+      const labels2 = { K: '将', A: '士', E: '象', N: '马', R: '车', C: '炮', P: '卒' };
+      for (let r = 0; r < 10; r++) {
+        for (let c = 0; c < 9; c++) {
+          const p = state.board[r][c];
+          if (!p) continue;
+          const x = g.padX + c * g.cw, y = g.padY + r * g.ch;
+          const rad = Math.min(g.cw, g.ch) * 0.42;
+          const isSel = state.selected && state.selected[0] === r && state.selected[1] === c;
+
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.35)';
+          ctx.shadowBlur = 6;
+          ctx.shadowOffsetY = 3;
+          ctx.fillStyle = isSel ? '#fef08a' : '#fdf2d6';
+          ctx.beginPath();
+          ctx.arc(x, y, rad, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+
+          ctx.strokeStyle = p.s === 1 ? '#b91c1c' : '#1e293b';
+          ctx.lineWidth = Math.max(2, rad * 0.1);
+          ctx.beginPath();
+          ctx.arc(x, y, rad * 0.85, 0, Math.PI * 2);
+          ctx.stroke();
+
+          ctx.fillStyle = p.s === 1 ? '#b91c1c' : '#0f172a';
+          ctx.font = `bold ${Math.round(rad * 1.1)}px "KaiTi", "STKaiti", serif`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(p.s === 1 ? labels1[p.t] : labels2[p.t], x, y + 1);
+        }
+      }
+    }
+
+    function drawChess(g, w, h) {
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(0, 0, w, h);
+      const uni1 = { K: '♔', Q: '♕', R: '♖', B: '♗', N: '♘', P: '♙' };
+      const uni2 = { K: '♚', Q: '♛', R: '♜', B: '♝', N: '♞', P: '♟' };
+
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const x = g.padX + c * g.cw, y = g.padY + r * g.ch;
+          const light = (r + c) % 2 === 0;
+          ctx.fillStyle = light ? '#f0d9b5' : '#b58863';
+          ctx.fillRect(x, y, g.cw, g.ch);
+
+          if (state.lastMove && ((state.lastMove.from[0] === r && state.lastMove.from[1] === c) || (state.lastMove.to[0] === r && state.lastMove.to[1] === c))) {
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.38)';
+            ctx.fillRect(x, y, g.cw, g.ch);
+          }
+          if (state.selected && state.selected[0] === r && state.selected[1] === c) {
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.45)';
+            ctx.fillRect(x, y, g.cw, g.ch);
+          }
+
+          const p = state.board[r][c];
+          if (p) {
+            if (p.t === 'K' && chessInCheck(state.board, p.s)) {
+              ctx.fillStyle = 'rgba(239, 68, 68, 0.65)';
+              ctx.fillRect(x, y, g.cw, g.ch);
+            }
+            ctx.font = `${Math.round(g.cw * 0.72)}px serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = p.s === 1 ? '#ffffff' : '#0f172a';
+            ctx.strokeStyle = p.s === 1 ? '#1e293b' : '#e2e8f0';
+            ctx.lineWidth = 1.5;
+            const ch = p.s === 1 ? uni1[p.t] : uni2[p.t];
+            if (p.s === 1) ctx.strokeText(ch, x + g.cw / 2, y + g.ch / 2 + 2);
+            ctx.fillText(ch, x + g.cw / 2, y + g.ch / 2 + 2);
+          }
+        }
+      }
+
+      state.legalTargets.forEach(([r, c]) => {
+        const x = g.padX + (c + 0.5) * g.cw, y = g.padY + (r + 0.5) * g.ch;
+        ctx.fillStyle = state.board[r][c] ? 'rgba(239, 68, 68, 0.5)' : 'rgba(16, 185, 129, 0.65)';
+        ctx.beginPath();
+        ctx.arc(x, y, g.cw * (state.board[r][c] ? 0.38 : 0.16), 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function drawGoban(g, w, h) {
+      ctx.fillStyle = '#deb36f';
+      ctx.fillRect(0, 0, w, h);
+      const n = g.rows;
+      ctx.strokeStyle = '#3f2a14';
+      ctx.lineWidth = Math.max(1, w * 0.0022);
+      for (let i = 0; i < n; i++) {
+        ctx.beginPath();
+        ctx.moveTo(g.padX, g.padY + i * g.ch);
+        ctx.lineTo(g.padX + (n - 1) * g.cw, g.padY + i * g.ch);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(g.padX + i * g.cw, g.padY);
+        ctx.lineTo(g.padX + i * g.cw, g.padY + (n - 1) * g.ch);
+        ctx.stroke();
+      }
+      // Star points
+      const stars = n === 15 ? [3, 7, 11] : n === 9 ? [2, 4, 6] : n === 13 ? [3, 6, 9] : [3, 9, 15];
+      ctx.fillStyle = '#3f2a14';
+      stars.forEach(r => stars.forEach(c => {
+        ctx.beginPath();
+        ctx.arc(g.padX + c * g.cw, g.padY + r * g.ch, Math.max(2.5, g.cw * 0.1), 0, Math.PI * 2);
+        ctx.fill();
+      }));
+
+      // Stones
+      for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+          const v = state.board[r][c];
+          if (!v) continue;
+          const x = g.padX + c * g.cw, y = g.padY + r * g.ch;
+          const rad = g.cw * 0.44;
+          const grad = ctx.createRadialGradient(x - rad * 0.3, y - rad * 0.3, rad * 0.1, x, y, rad);
+          if (v === 1) { grad.addColorStop(0, '#475569'); grad.addColorStop(1, '#020617'); }
+          else { grad.addColorStop(0, '#ffffff'); grad.addColorStop(1, '#cbd5e1'); }
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(x, y, rad, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (state.lastMove && state.lastMove.to[0] === r && state.lastMove.to[1] === c) {
+            ctx.strokeStyle = v === 1 ? '#f59e0b' : '#ef4444';
+            ctx.lineWidth = Math.max(2, rad * 0.15);
+            ctx.beginPath();
+            ctx.arc(x, y, rad * 0.4, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+      }
+
+      if (state.extra.winLine) {
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = Math.max(3, g.cw * 0.14);
+        state.extra.winLine.forEach(([r, c]) => {
+          ctx.beginPath();
+          ctx.arc(g.padX + c * g.cw, g.padY + r * g.ch, g.cw * 0.46, 0, Math.PI * 2);
+          ctx.stroke();
+        });
+      }
+    }
+
+    function drawReversi(g, w, h) {
+      ctx.fillStyle = '#065f46';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#022c22';
+      ctx.lineWidth = 2;
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const x = g.padX + c * g.cw, y = g.padY + r * g.ch;
+          ctx.strokeRect(x, y, g.cw, g.ch);
+          const v = state.board[r][c];
+          if (v !== 0) {
+            ctx.fillStyle = v === 1 ? '#0f172a' : '#f8fafc';
+            ctx.beginPath();
+            ctx.arc(x + g.cw / 2, y + g.ch / 2, g.cw * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+            if (state.lastMove && state.lastMove.to[0] === r && state.lastMove.to[1] === c) {
+              ctx.fillStyle = '#f59e0b';
+              ctx.beginPath();
+              ctx.arc(x + g.cw / 2, y + g.ch / 2, g.cw * 0.1, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          } else if (state.winner === 0 && reversiFlips(state.board, r, c, state.turn).length > 0) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.22)';
+            ctx.beginPath();
+            ctx.arc(x + g.cw / 2, y + g.ch / 2, g.cw * 0.14, 0, Math.PI * 2);
+            ctx.fill();
+          }
+        }
+      }
+    }
+
+    function drawJungle(g, w, h) {
+      ctx.fillStyle = '#cbd5e1';
+      ctx.fillRect(0, 0, w, h);
+      const names = { 8: '象', 7: '狮', 6: '虎', 5: '豹', 4: '狼', 3: '狗', 2: '猫', 1: '鼠' };
+      for (let r = 0; r < 9; r++) {
+        for (let c = 0; c < 7; c++) {
+          const x = g.padX + c * g.cw, y = g.padY + r * g.ch;
+          let bg = '#dcfce7';
+          let label = '';
+          if (jungleIsWater(r, c)) { bg = '#38bdf8'; label = '河'; }
+          else if (jungleIsDen(r, c, 1) || jungleIsDen(r, c, 2)) { bg = '#f59e0b'; label = '兽穴'; }
+          else if (jungleIsTrap(r, c, 1) || jungleIsTrap(r, c, 2)) { bg = '#fde68a'; label = '陷阱'; }
+
+          ctx.fillStyle = bg;
+          ctx.fillRect(x, y, g.cw, g.ch);
+          ctx.strokeStyle = '#64748b';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(x, y, g.cw, g.ch);
+
+          if (label && !state.board[r][c]) {
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.45)';
+            ctx.font = `bold ${Math.round(g.cw * 0.24)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(label, x + g.cw / 2, y + g.ch / 2);
+          }
+
+          if (state.lastMove && ((state.lastMove.from[0] === r && state.lastMove.from[1] === c) || (state.lastMove.to[0] === r && state.lastMove.to[1] === c))) {
+            ctx.fillStyle = 'rgba(250, 204, 21, 0.4)';
+            ctx.fillRect(x, y, g.cw, g.ch);
+          }
+
+          const p = state.board[r][c];
+          if (p) {
+            const cx = x + g.cw / 2, cy = y + g.ch / 2;
+            const rad = Math.min(g.cw, g.ch) * 0.4;
+            const isSel = state.selected && state.selected[0] === r && state.selected[1] === c;
+            ctx.fillStyle = isSel ? '#fef08a' : (p.s === 1 ? '#dc2626' : '#2563eb');
+            ctx.beginPath();
+            ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            ctx.fillStyle = isSel ? '#0f172a' : '#ffffff';
+            ctx.font = `bold ${Math.round(rad * 0.95)}px sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(names[p.r], cx, cy);
+          }
+        }
+      }
+
+      state.legalTargets.forEach(([r, c]) => {
+        ctx.fillStyle = state.board[r][c] ? 'rgba(239, 68, 68, 0.55)' : 'rgba(16, 185, 129, 0.75)';
+        ctx.beginPath();
+        ctx.arc(g.padX + (c + 0.5) * g.cw, g.padY + (r + 0.5) * g.ch, g.cw * 0.16, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function drawTicTacToe(g, w, h) {
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, w, h);
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = Math.max(4, w * 0.012);
+      for (let i = 1; i < 3; i++) {
+        ctx.beginPath();
+        ctx.moveTo(g.padX + i * g.cw, g.padY);
+        ctx.lineTo(g.padX + i * g.cw, g.padY + 3 * g.ch);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(g.padX, g.padY + i * g.ch);
+        ctx.lineTo(g.padX + 3 * g.cw, g.padY + i * g.ch);
+        ctx.stroke();
+      }
+      for (let r = 0; r < 3; r++) {
+        for (let c = 0; c < 3; c++) {
+          const v = state.board[r][c];
+          if (!v) continue;
+          const cx = g.padX + (c + 0.5) * g.cw, cy = g.padY + (r + 0.5) * g.ch;
+          const rad = g.cw * 0.28;
+          ctx.lineWidth = Math.max(6, g.cw * 0.07);
+          if (v === 1) {
+            ctx.strokeStyle = '#f59e0b';
+            ctx.beginPath();
+            ctx.moveTo(cx - rad, cy - rad); ctx.lineTo(cx + rad, cy + rad);
+            ctx.moveTo(cx + rad, cy - rad); ctx.lineTo(cx - rad, cy + rad);
+            ctx.stroke();
+          } else {
+            ctx.strokeStyle = '#38bdf8';
+            ctx.beginPath();
+            ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+      }
+      if (state.extra.winLine) {
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.85)';
+        ctx.lineWidth = Math.max(6, g.cw * 0.06);
+        state.extra.winLine.forEach(([r, c]) => {
+          ctx.strokeRect(g.padX + c * g.cw + 6, g.padY + r * g.ch + 6, g.cw - 12, g.ch - 12);
+        });
+      }
+    }
+
+    // ==================== BOARD INPUT HANDLING ====================
+    canvas.addEventListener('click', (e) => {
+      if (state.winner !== 0) return;
+      if (state.mode === 'p2p') {
+        if (!state.connected) { showToast('请先创建或加入房间（或切换为“人机 AI / 本地双人”）'); return; }
+        if (state.turn !== state.mySide) { showToast('请等待对手落子'); return; }
+      }
+      if (state.mode === 'ai' && state.turn === 2) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (e.clientX - rect.left) * scaleX;
+      const y = (e.clientY - rect.top) * scaleY;
+
+      const g = getGridSpec();
+      const c = g.onGrid ? Math.round((x - g.padX) / g.cw) : Math.floor((x - g.padX) / g.cw);
+      const r = g.onGrid ? Math.round((y - g.padY) / g.ch) : Math.floor((y - g.padY) / g.ch);
+
+      if (r < 0 || r >= g.rows || c < 0 || c >= g.cols) return;
+
+      // Placement games
+      if (['gomoku', 'reversi', 'go', 'tictactoe'].includes(state.gameId)) {
+        applyMove({ to: [r, c] });
+        return;
+      }
+
+      // Piece-movement games (xiangqi, chess, jungle)
+      if (state.selected) {
+        const hit = state.legalTargets.some(([lr, lc]) => lr === r && lc === c);
+        if (hit) {
+          applyMove({ from: state.selected, to: [r, c] });
+          return;
+        }
+      }
+
+      const clicked = state.board[r][c];
+      if (clicked && clicked.s === state.turn) {
+        state.selected = [r, c];
+        if (state.gameId === 'xiangqi') state.legalTargets = xiangqiLegalMoves(state.board, r, c);
+        else if (state.gameId === 'chess') state.legalTargets = chessLegalMoves(state.board, r, c, state.extra);
+        else if (state.gameId === 'jungle') state.legalTargets = jungleLegalMoves(state.board, r, c);
+      } else {
+        state.selected = null;
+        state.legalTargets = [];
+      }
+      drawBoard();
+    });
+
+    // ==================== PEERJS NETWORKING ====================
+    function randomCode(len = 6) {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let out = '';
+      for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+      return out;
+    }
+
+    function setConnStatus(status, label) {
+      connText.textContent = label;
+      connDot.className = 'w-2 h-2 rounded-full ' + (
+        status === 'ok' ? 'bg-emerald-400' :
+        status === 'wait' ? 'bg-amber-400 animate-pulse' :
+        status === 'err' ? 'bg-rose-500' : 'bg-slate-400'
+      );
+    }
+
+    function destroyPeer() {
+      if (state.conn) { try { state.conn.close(); } catch (_) {} state.conn = null; }
+      if (state.peer) { try { state.peer.destroy(); } catch (_) {} state.peer = null; }
+      state.connected = false;
+      state.roomId = '';
+      state.isHost = false;
+      roomShareBox.classList.add('hidden');
+      leaveRoomBtn.disabled = true;
+      setConnStatus('off', state.mode === 'p2p' ? '未连接' : state.mode === 'ai' ? '人机 AI' : '本地双人');
+    }
+
+    function createRoom() {
+      if (typeof Peer === 'undefined') {
+        showToast('PeerJS 库加载失败，请检查网络', 'error');
+        return;
+      }
+      destroyPeer();
+      const id = ROOM_PREFIX + randomCode(6);
+      setConnStatus('wait', '正在创建房间...');
+      try {
+        const peer = new Peer(id, { debug: 1 });
+        state.peer = peer;
+        peer.on('open', (openId) => {
+          state.roomId = openId;
+          state.isHost = true;
+          state.mySide = 1;
+          roomCodeDisplay.textContent = openId;
+          myRoleBadge.textContent = `房主 · ${getGameMeta().p1}(先手)`;
+          roomShareBox.classList.remove('hidden');
+          leaveRoomBtn.disabled = false;
+          setConnStatus('wait', '等待对手加入...');
+          addLog(`房间已创建：${openId}，请复制分享口令发给好友`);
+        });
+        peer.on('connection', (conn) => {
+          if (state.conn && state.conn.open) {
+            conn.on('open', () => conn.close());
+            return;
+          }
+          setupConnection(conn, true);
+        });
+        peer.on('error', (err) => {
+          if (err.type === 'unavailable-id') {
+            showToast('房间号冲突，正在重试...', 'info');
+            createRoom();
+          } else {
+            setConnStatus('err', '连接异常');
+            showToast(`PeerJS 错误: ${err.type || err.message}`, 'error');
+          }
+        });
+      } catch (err) {
+        setConnStatus('err', '创建失败');
+        showToast('无法初始化 PeerJS', 'error');
+      }
+    }
+
+    function extractRoomId(raw) {
+      const cleaned = raw.trim().toUpperCase();
+      const match = cleaned.match(/QIXIA-[A-Z0-9]{4,12}/);
+      if (match) return match[0];
+      const alnum = cleaned.replace(/[^A-Z0-9]/g, '');
+      if (alnum.length >= 4 && alnum.length <= 12) return ROOM_PREFIX + alnum;
+      return '';
+    }
+
+    function joinRoom(rawInput) {
+      if (typeof Peer === 'undefined') {
+        showToast('PeerJS 库加载失败，请检查网络', 'error');
+        return;
+      }
+      const targetId = extractRoomId(rawInput);
+      if (!targetId) {
+        showToast('未识别到有效的 QIXIA- 房间号', 'error');
+        return;
+      }
+      destroyPeer();
+      setConnStatus('wait', '正在连接房间...');
+      try {
+        const peer = new Peer(ROOM_PREFIX + 'GUEST-' + randomCode(4), { debug: 1 });
+        state.peer = peer;
+        peer.on('open', () => {
+          const conn = peer.connect(targetId, { reliable: true });
+          state.roomId = targetId;
+          state.isHost = false;
+          state.mySide = 2;
+          setupConnection(conn, false);
+        });
+        peer.on('error', (err) => {
+          setConnStatus('err', '连接失败');
+          showToast(err.type === 'peer-unavailable' ? '未找到该房间或房主已离开' : `连接错误: ${err.type}`, 'error');
+        });
+      } catch (_) {
+        setConnStatus('err', '连接失败');
+      }
+    }
+
+    function setupConnection(conn, isHost) {
+      state.conn = conn;
+      conn.on('open', () => {
+        state.connected = true;
+        leaveRoomBtn.disabled = false;
+        roomCodeDisplay.textContent = state.roomId;
+        myRoleBadge.textContent = isHost ? `房主 · ${getGameMeta().p1}(先手)` : `客方 · ${getGameMeta().p2}(后手)`;
+        roomShareBox.classList.remove('hidden');
+        setConnStatus('ok', '已联机对战中');
+        showToast('对手已连接，开始对战！', 'success');
+        addLog(isHost ? '对手已加入房间！' : `已成功加入房间 ${state.roomId}`);
+        if (isHost) {
+          initGame(state.gameId, true);
+          conn.send({ type: 'sync_init', gameId: state.gameId, goSize: state.goSize });
+        }
+        updateUI();
+      });
+
+      conn.on('data', (data) => {
+        if (!data || typeof data !== 'object') return;
+        if (data.type === 'sync_init') {
+          state.goSize = data.goSize || 9;
+          initGame(data.gameId, true);
+          myRoleBadge.textContent = `客方 · ${getGameMeta().p2}(后手)`;
+          addLog(`房主已同步棋种：${getGameMeta().name}`);
+        } else if (data.type === 'move') {
+          applyMove(data.move, true);
+        } else if (data.type === 'chat') {
+          addLog(data.text, 'peer');
+        } else if (data.type === 'resign') {
+          state.winner = state.mySide;
+          state.winReason = '对方认输！';
+          playTone('win');
+          updateUI();
+          addLog('对方已认输');
+        } else if (data.type === 'restart_req') {
+          showModal('对手请求重开一局', '是否同意重新开始当前对局？', [
+            { label: '拒绝', onClick: () => {} },
+            { label: '同意重开', primary: true, onClick: () => {
+              initGame(state.gameId, true);
+              conn.send({ type: 'restart_ack', gameId: state.gameId, goSize: state.goSize });
+            }}
+          ]);
+        } else if (data.type === 'restart_ack') {
+          state.goSize = data.goSize || state.goSize;
+          initGame(data.gameId, true);
+          showToast('已重新开始对局', 'success');
+        } else if (data.type === 'undo_req') {
+          showModal('对手请求悔棋', '是否同意对方悔棋一步？', [
+            { label: '拒绝', onClick: () => conn.send({ type: 'undo_deny' }) },
+            { label: '同意悔棋', primary: true, onClick: () => {
+              performUndo();
+              conn.send({ type: 'undo_ack' });
+            }}
+          ]);
+        } else if (data.type === 'undo_ack') {
+          performUndo();
+          showToast('对方同意了你的悔棋请求', 'success');
+        } else if (data.type === 'undo_deny') {
+          showToast('对方拒绝了悔棋请求', 'error');
+        }
+      });
+
+      conn.on('close', () => {
+        state.connected = false;
+        setConnStatus('err', '对方已断开');
+        addLog('对方已断开连接');
+        showToast('对手已断开连接', 'error');
+      });
+    }
+
+    function performUndo() {
+      if (state.history.length === 0) return;
+      const snap = state.history.pop();
+      state.board = snap.board;
+      state.turn = snap.turn;
+      state.lastMove = snap.lastMove;
+      state.moveCount = snap.moveCount;
+      state.extra = snap.extra;
+      state.winner = 0;
+      state.winReason = '';
+      state.selected = null;
+      state.legalTargets = [];
+      updateUI();
+      resizeAndDraw();
+    }
+
+    // ==================== UI RENDER & EVENT LISTENERS ====================
+    function renderGameTabs() {
+      gameTabsEl.innerHTML = '';
+      GAMES.forEach(g => {
+        const active = g.id === state.gameId;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `shrink-0 px-3 py-1.5 rounded-xl text-xs font-medium flex items-center gap-1.5 transition border ${
+          active ? 'bg-amber-500 text-slate-950 border-amber-400 font-semibold shadow' : 'bg-slate-800/80 text-slate-300 border-slate-700 hover:bg-slate-700'
+        }`;
+        btn.innerHTML = `<span>${g.icon}</span><span>${g.name}</span>`;
+        btn.addEventListener('click', () => {
+          if (state.gameId === g.id) return;
+          if (state.mode === 'p2p' && state.connected && !state.isHost) {
+            showToast('联机模式下由房主切换棋种');
+            return;
+          }
+          initGame(g.id);
+          if (state.mode === 'p2p' && state.connected && state.isHost && state.conn) {
+            state.conn.send({ type: 'sync_init', gameId: g.id, goSize: state.goSize });
+          }
+        });
+        gameTabsEl.appendChild(btn);
+      });
+    }
+
+    function updateUI() {
+      const meta = getGameMeta();
+      ruleTitle.textContent = `${meta.name}规则`;
+      ruleDesc.textContent = meta.rule;
+      moveCountBadge.textContent = `${state.moveCount} 步`;
+
+      const isGo = state.gameId === 'go';
+      goOptionsBox.classList.toggle('hidden', !isGo);
+      passBtn.classList.toggle('hidden', !isGo || state.winner !== 0);
+      scoreGoBtn.classList.toggle('hidden', !isGo || state.winner !== 0);
+
+      if (state.winner !== 0) {
+        turnIndicator.className = 'w-3.5 h-3.5 rounded-full bg-emerald-400 ring-4 ring-emerald-400/20';
+        turnText.textContent = state.winner === 3 ? '平局结束' : `${state.winner === 1 ? meta.p1 : meta.p2} 获胜！`;
+        subStatusText.textContent = state.winReason || '点击“重开”再来一局';
+      } else {
+        const isP1Turn = state.turn === 1;
+        turnIndicator.className = `w-3.5 h-3.5 rounded-full ${isP1Turn ? 'bg-amber-400 ring-4 ring-amber-400/20' : 'bg-sky-400 ring-4 ring-sky-400/20'}`;
+        turnText.textContent = `${isP1Turn ? meta.p1 : meta.p2} 回合`;
+        if (state.mode === 'p2p') {
+          if (!state.connected) subStatusText.textContent = '等待联机连接...';
+          else subStatusText.textContent = state.turn === state.mySide ? '轮到你走棋' : '等待对手走棋...';
+        } else if (state.mode === 'ai') {
+          subStatusText.textContent = state.turn === 1 ? '轮到你走棋' : 'AI 思考中...';
+        } else {
+          subStatusText.textContent = '本地双人轮流走棋';
+        }
+      }
+
+      // Score bar
+      if (state.gameId === 'reversi') {
+        let c1 = 0, c2 = 0;
+        state.board.forEach(r => r.forEach(v => { if (v === 1) c1++; else if (v === 2) c2++; }));
+        p1ScoreLabel.textContent = `黑棋: ${c1}`;
+        p2ScoreLabel.textContent = `白棋: ${c2}`;
+      } else if (state.gameId === 'go') {
+        p1ScoreLabel.textContent = `黑提子: ${state.extra.captures ? state.extra.captures[1] : 0}`;
+        p2ScoreLabel.textContent = `白提子: ${state.extra.captures ? state.extra.captures[2] : 0}`;
+      } else {
+        p1ScoreLabel.textContent = `${meta.p1} (先手)`;
+        p2ScoreLabel.textContent = `${meta.p2} (后手)`;
+      }
+      centerScoreLabel.textContent = state.winner !== 0 ? (state.winReason || '对局结束') : `第 ${state.moveCount + 1} 手`;
+    }
+
+    // Mode Buttons
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const m = btn.dataset.mode;
+        if (state.mode === m) return;
+        destroyPeer();
+        state.mode = m;
+        document.querySelectorAll('.mode-btn').forEach(b => {
+          b.className = b.dataset.mode === m
+            ? 'mode-btn px-2 py-1.5 rounded-lg text-xs font-medium transition bg-amber-500 text-slate-950'
+            : 'mode-btn px-2 py-1.5 rounded-lg text-xs font-medium transition text-slate-300 hover:text-white';
+        });
+        document.getElementById('p2pPanel').classList.toggle('hidden', m !== 'p2p');
+        setConnStatus('off', m === 'p2p' ? '未连接' : m === 'ai' ? '人机 AI' : '本地双人');
+        initGame(state.gameId);
+      });
+    });
+
+    // Go Size Buttons
+    document.querySelectorAll('.go-size-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.goSize = parseInt(btn.dataset.gosize, 10);
+        document.querySelectorAll('.go-size-btn').forEach(b => {
+          b.className = parseInt(b.dataset.gosize, 10) === state.goSize
+            ? 'go-size-btn px-2 py-1 rounded-lg text-xs font-medium bg-amber-500 text-slate-950'
+            : 'go-size-btn px-2 py-1 rounded-lg text-xs font-medium bg-slate-800 text-slate-300 hover:bg-slate-700';
+        });
+        initGame('go');
+        if (state.mode === 'p2p' && state.connected && state.isHost && state.conn) {
+          state.conn.send({ type: 'sync_init', gameId: 'go', goSize: state.goSize });
+        }
+      });
+    });
+
+    document.getElementById('createRoomBtn').addEventListener('click', createRoom);
+    leaveRoomBtn.addEventListener('click', () => { destroyPeer(); addLog('已离开房间'); });
+    document.getElementById('joinRoomBtn').addEventListener('click', () => joinRoom(joinInput.value));
+    joinInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') joinRoom(joinInput.value); });
+
+    document.getElementById('copyCodeBtn').addEventListener('click', () => {
+      if (state.roomId) copyText(state.roomId, '已复制房间号！');
+    });
+    document.getElementById('copyShareStrBtn').addEventListener('click', () => {
+      if (!state.roomId) return;
+      const meta = getGameMeta();
+      const shareStr = `【棋侠对战】邀请你来一局「${meta.name}」\n房间号：${state.roomId}\n复制整段文字到“加入房间”输入框即可秒进！`;
+      copyText(shareStr, '已复制完整分享口令！');
+    });
+
+    document.getElementById('soundToggleBtn').addEventListener('click', (e) => {
+      state.soundOn = !state.soundOn;
+      e.currentTarget.textContent = state.soundOn ? '🔊 音效开' : '🔇 静音';
+    });
+
+    passBtn.addEventListener('click', () => {
+      if (state.gameId !== 'go' || state.winner !== 0) return;
+      if (state.mode === 'p2p' && (!state.connected || state.turn !== state.mySide)) return;
+      applyMove({ pass: true });
+    });
+
+    scoreGoBtn.addEventListener('click', () => {
+      if (state.gameId === 'go' && state.winner === 0) finishGoGame();
+    });
+
+    document.getElementById('undoBtn').addEventListener('click', () => {
+      if (state.history.length === 0) { showToast('当前没有可悔的步骤'); return; }
+      if (state.mode === 'p2p') {
+        if (!state.connected || !state.conn) return;
+        state.conn.send({ type: 'undo_req' });
+        showToast('已向对手发送悔棋请求');
+      } else {
+        performUndo();
+        if (state.mode === 'ai' && state.turn === 2 && state.history.length > 0) performUndo();
+      }
+    });
+
+    document.getElementById('resignBtn').addEventListener('click', () => {
+      if (state.winner !== 0) return;
+      const loser = state.mode === 'p2p' ? state.mySide : state.turn;
+      state.winner = 3 - loser;
+      state.winReason = `${loser === 1 ? getGameMeta().p1 : getGameMeta().p2} 认输`;
+      if (state.mode === 'p2p' && state.connected && state.conn) {
+        state.conn.send({ type: 'resign' });
+      }
+      playTone('win');
+      updateUI();
+    });
+
+    document.getElementById('restartBtn').addEventListener('click', () => {
+      if (state.mode === 'p2p' && state.connected && state.conn) {
+        state.conn.send({ type: 'restart_req' });
+        showToast('已发送重开请求，等待对方确认');
+      } else {
+        initGame(state.gameId, true);
+      }
+    });
+
+    document.getElementById('chatForm').addEventListener('submit', (e) => {
+      e.preventDefault();
+      const txt = chatInput.value.trim();
+      if (!txt) return;
+      chatInput.value = '';
+      addLog(txt, 'me');
+      if (state.mode === 'p2p' && state.connected && state.conn) {
+        state.conn.send({ type: 'chat', text: txt });
+      }
+    });
+
+    window.addEventListener('resize', resizeAndDraw);
+    window.addEventListener('load', () => {
+      setConnStatus('off', '未连接');
+      initGame('xiangqi');
+    });
+  })();
+  </script>
+</body>
+</html>
